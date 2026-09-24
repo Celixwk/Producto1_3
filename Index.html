@@ -1,11 +1,240 @@
 <!DOCTYPE html>
-<html lang="en">    
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Document</title>
-    </head>
-    <body>
-        <h1>Hola mundo<h1>
-    </body>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hola mundo G3</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: radial-gradient(ellipse at center, #1b2a49 0%, #0a0f1e 70%);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #cfd8ea;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #escena {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 900px;
+    cursor: grab;
+    touch-action: none;
+  }
+  #escena.arrastrando { cursor: grabbing; }
+
+  #objeto {
+    position: relative;
+    transform-style: preserve-3d;
+    width: 0;
+    height: 0;
+  }
+
+  .capa {
+    position: absolute;
+    left: 0;
+    top: 0;
+    white-space: nowrap;
+    font-size: clamp(48px, 12vw, 140px);
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    transform-origin: center;
+    line-height: 1;
+  }
+
+  /* Suelo con reflejo suave para dar sensacion de profundidad */
+  #suelo {
+    position: absolute;
+    left: 50%;
+    bottom: 12%;
+    width: 60vw;
+    height: 30px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(90,140,255,0.35), transparent 70%);
+    filter: blur(8px);
+    pointer-events: none;
+  }
+
+  #ayuda {
+    position: absolute;
+    bottom: 24px;
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    opacity: 0.75;
+    transition: opacity 0.6s;
+    pointer-events: none;
+  }
+  #ayuda.oculta { opacity: 0; }
+
+  #controles {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+  }
+  #controles button {
+    background: rgba(255,255,255,0.08);
+    color: #e6edf9;
+    border: 1px solid rgba(255,255,255,0.18);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #controles button:hover { background: rgba(255,255,255,0.18); }
+</style>
+</head>
+<body>
+
+<div id="controles">
+  <button id="btnAuto">Pausar giro</button>
+  <button id="btnReset">Reiniciar</button>
+</div>
+
+<div id="escena">
+  <div id="objeto"></div>
+</div>
+<div id="suelo"></div>
+<div id="ayuda">Arrastra para girar &middot; Rueda para acercar &middot; Doble clic para reiniciar</div>
+
+<script>
+(function () {
+  var TEXTO = "Hola Mundo G3";
+  var PROFUNDIDAD = 60;   // grosor total de la extrusion en px
+  var CAPAS = 30;         // mas capas = mas solido
+
+  var escena = document.getElementById("escena");
+  var objeto = document.getElementById("objeto");
+  var ayuda = document.getElementById("ayuda");
+  var btnAuto = document.getElementById("btnAuto");
+  var btnReset = document.getElementById("btnReset");
+
+  // Construir el texto extruido apilando capas en el eje Z
+  for (var i = 0; i < CAPAS; i++) {
+    var t = i / (CAPAS - 1);                 // 0 = fondo, 1 = frente
+    var z = (t - 0.5) * PROFUNDIDAD;
+    var capa = document.createElement("div");
+    capa.className = "capa";
+    capa.textContent = TEXTO;
+
+    if (i === CAPAS - 1) {
+      // Cara frontal: degradado brillante
+      capa.style.background = "linear-gradient(90deg, #7cf5ff, #8f9bff, #ff8fd8)";
+      capa.style.webkitBackgroundClip = "text";
+      capa.style.backgroundClip = "text";
+      capa.style.color = "transparent";
+      capa.style.textShadow = "none";
+    } else {
+      // Capas intermedias: tono que oscurece hacia el fondo
+      var l = 22 + t * 22;
+      capa.style.color = "hsl(228, 55%, " + l + "%)";
+    }
+
+    capa.style.transform = "translate(-50%, -50%) translateZ(" + z + "px)";
+    objeto.appendChild(capa);
+  }
+
+  // Estado de rotacion y zoom
+  var INICIAL = { rx: -12, ry: 25, zoom: 1 };
+  var rx = INICIAL.rx, ry = INICIAL.ry, zoom = INICIAL.zoom;
+  var velX = 0, velY = 0;
+  var auto = true;
+  var arrastrando = false;
+  var ultimoX = 0, ultimoY = 0;
+
+  function dibujar() {
+    objeto.style.transform =
+      "scale(" + zoom + ") rotateX(" + rx + "deg) rotateY(" + ry + "deg)";
+  }
+
+  function ocultarAyuda() { ayuda.classList.add("oculta"); }
+
+  // Arrastre (mouse y tactil mediante pointer events)
+  escena.addEventListener("pointerdown", function (e) {
+    arrastrando = true;
+    ultimoX = e.clientX;
+    ultimoY = e.clientY;
+    escena.classList.add("arrastrando");
+    escena.setPointerCapture(e.pointerId);
+    ocultarAyuda();
+  });
+
+  escena.addEventListener("pointermove", function (e) {
+    if (!arrastrando) return;
+    var dx = e.clientX - ultimoX;
+    var dy = e.clientY - ultimoY;
+    ultimoX = e.clientX;
+    ultimoY = e.clientY;
+    velY = dx * 0.4;
+    velX = -dy * 0.4;
+    ry += velY;
+    rx += velX;
+    dibujar();
+  });
+
+  function soltar(e) {
+    arrastrando = false;
+    escena.classList.remove("arrastrando");
+    try { escena.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  escena.addEventListener("pointerup", soltar);
+  escena.addEventListener("pointercancel", soltar);
+
+  // Zoom con la rueda
+  escena.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    zoom *= e.deltaY < 0 ? 1.08 : 0.92;
+    zoom = Math.max(0.4, Math.min(2.5, zoom));
+    ocultarAyuda();
+    dibujar();
+  }, { passive: false });
+
+  // Reiniciar vista
+  function reiniciar() {
+    rx = INICIAL.rx; ry = INICIAL.ry; zoom = INICIAL.zoom;
+    velX = 0; velY = 0;
+    dibujar();
+  }
+  escena.addEventListener("dblclick", reiniciar);
+  btnReset.addEventListener("click", reiniciar);
+
+  btnAuto.addEventListener("click", function () {
+    auto = !auto;
+    btnAuto.textContent = auto ? "Pausar giro" : "Reanudar giro";
+  });
+
+  // Bucle de animacion: inercia al soltar y giro automatico suave
+  function bucle() {
+    if (!arrastrando) {
+      // La inercia se va apagando
+      ry += velY;
+      rx += velX;
+      velX *= 0.95;
+      velY *= 0.95;
+
+      if (auto && Math.abs(velY) < 0.05) {
+        ry += 0.35;
+      }
+    }
+    // Limitar la inclinacion vertical para que no se voltee del todo
+    rx = Math.max(-80, Math.min(80, rx));
+    dibujar();
+    requestAnimationFrame(bucle);
+  }
+
+  dibujar();
+  bucle();
+})();
+</script>
+</body>
 </html>
